@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Image, Table, FileText, Eye } from "lucide-react";
 import type { VisualEvidence } from "./ChatWindow";
@@ -7,6 +8,30 @@ function getVisualUrl(src?: string) {
   if (!src) return undefined;
   if (/^https?:\/\//i.test(src)) return src;
   return `${API_BASE_URL}/${src.replace(/^\/+/, "")}`;
+}
+
+function VisualImage({ src, caption }: { src?: string; caption?: string }) {
+  const [error, setError] = useState(false);
+  const url = getVisualUrl(src);
+
+  if (!url || error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-4 text-center bg-secondary/50 text-xs text-muted-foreground">
+        <Image className="w-6 h-6 mb-1 opacity-40" />
+        <span>Figure referenced in page</span>
+        <span className="text-[10px] opacity-75">(Image preview unavailable)</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt={caption || "Visual evidence"}
+      className="w-full h-full object-cover"
+      onError={() => setError(true)}
+    />
+  );
 }
 
 interface VisualPanelProps {
@@ -68,17 +93,7 @@ export function VisualPanel({ visuals }: VisualPanelProps) {
                   <>
                     {/* Image Preview */}
                     <div className="relative aspect-video bg-secondary overflow-hidden">
-                      {visual.src ? (
-                        <img
-                          src={getVisualUrl(visual.src)}
-                          alt={visual.caption || "Visual evidence"}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
-                          Image not available
-                        </div>
-                      )}
+                      <VisualImage src={visual.src} caption={visual.caption} />
 
                       {/* Badge */}
                       <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-md bg-background/90 backdrop-blur-sm">

@@ -75,18 +75,35 @@ app = FastAPI(
 # CORS CONFIGURATION
 # ============================================================
 
-origins = [
+# Read additional origins from environment variables if present
+configured_origins = [
     # Production frontend
     "https://gorag.vercel.app",
-
     # Local development
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
 ]
+
+env_frontend_url = os.getenv("FRONTEND_URL")
+if env_frontend_url:
+    for url in env_frontend_url.split(","):
+        cleaned = url.strip()
+        if cleaned and cleaned not in configured_origins:
+            configured_origins.append(cleaned)
+
+env_allowed_origins = os.getenv("ALLOWED_ORIGINS")
+if env_allowed_origins:
+    for url in env_allowed_origins.split(","):
+        cleaned = url.strip()
+        if cleaned and cleaned not in configured_origins:
+            configured_origins.append(cleaned)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=configured_origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$|^http://(localhost|127\.0\.0\.1):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,7 +115,7 @@ app.add_middleware(
 # ============================================================
 
 # Allows extracted images/figures to be accessed through:
-# https://gorag-backend.onrender.com/extracted/filename.png
+# https://gorag-backend.onrender.com/extracted/figures/filename.png
 
 app.mount(
     "/extracted",
@@ -113,15 +130,17 @@ app.mount(
 
 @app.on_event("startup")
 def startup():
-    logger.info("FastAPI startup...")
+    logger.info("FastAPI starting up...")
 
     try:
         setup_collection()
-        logger.info("Qdrant ready!")
-
-    except Exception:
-        logger.exception("Failed to initialize Qdrant collection")
-        raise
+        logger.info("Qdrant collection and indexes ready!")
+    except Exception as e:
+        logger.warning(
+            "Qdrant setup during startup failed: %s. "
+            "Server will remain online, but vector queries may fail until Qdrant is connected.",
+            e,
+        )
 
 
 # ============================================================
@@ -131,7 +150,9 @@ def startup():
 @app.get("/")
 def home():
     return {
-        "status": "GoRag Backend Running"
+        "status": "GoRag Backend Running",
+        "docs": "/docs",
+        "health": "/health",
     }
 
 
@@ -141,9 +162,14 @@ def home():
 
 @app.get("/health")
 def health():
+    gemini_key_set = bool(os.getenv("GEMINI_API_KEY"))
+    qdrant_url_set = bool(os.getenv("QDRANT_URL"))
     return {
-        "status": "healthy"
+        "status": "healthy",
+        "gemini_configured": gemini_key_set,
+        "qdrant_configured": qdrant_url_set,
     }
+
 
 
 # ============================================================
@@ -225,20 +251,32 @@ def _ingest_pdf(
     # Extract tables
     # ----------------------------------------
 
-    blocks.extend(
-        extract_tables(pdf_path)
-    )
+    try:
+        table_blocks = extract_tables(pdf_path)
+        blocks.extend(table_blocks)
+    except Exception as e:
+        logger.warning("Table extraction failed for %s (continuing): %s", doc_id, e)
 
     # ----------------------------------------
     # Extract figures
     # ----------------------------------------
 
-    blocks.extend(
-        extract_figures(
+    try:
+        figure_blocks = extract_figures(
             pdf_path,
             doc_id,
         )
-    )
+        blocks.extend(figure_blocks)
+    except Exception as e:
+        logger.warning("Figure extraction failed for %s (continuing): %s", doc_id, e)
+
+    if not blocks:
+        logger.warning("No blocks extracted from PDF %s. Inserting placeholder.", doc_id)
+        blocks.append({
+            "type": "text",
+            "page": 1,
+            "content": f"Document {doc_id} contains no readable text or visuals.",
+        })
 
     logger.info(
         "Total extracted blocks = %d",
@@ -399,18 +437,19 @@ async def upload_pdf(file: UploadFile):
             doc_id,
         )
 
-    except Exception:
+    except Exception as exc:
 
         _safe_remove(pdf_path)
 
         logger.exception(
-            "Failed to process PDF %s",
+            "Failed to process PDF %s: %s",
             doc_id,
+            exc,
         )
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to process the uploaded PDF.",
+            detail=f"Failed to process uploaded PDF: {str(exc)}",
         )
 
     # ========================================================
@@ -536,16 +575,17 @@ async def ask(request: AskRequest):
             citations,
         )
 
-    except Exception:
+    except Exception as exc:
 
         logger.exception(
-            "Answer generation failed for doc_id=%s",
+            "Answer generation failed for doc_id=%s: %s",
             doc_id,
+            exc,
         )
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate an answer.",
+            detail=f"Failed to generate answer: {str(exc)}",
         )
 
     # ========================================================
