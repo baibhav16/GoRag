@@ -4,6 +4,7 @@ python-multipart==0.0.9
 pydantic==2.6.4
 python-dotenv==1.0.1
 qdrant-client>=1.10.0,<2.0.0
+fastembed>=0.3.0
 Pillow>=10.2.0
 pymupdf>=1.23.26
 numpy>=1.26.0
