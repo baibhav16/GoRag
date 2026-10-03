@@ -1,0 +1,327 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* GoRag Design System - Professional AI Chat Interface */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Core palette - Sophisticated slate blue theme */
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Deep indigo blue */
+    --primary: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Soft slate */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted elements */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    /* Accent - Subtle cyan/teal */
+    --accent: 187 72% 44%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Success state */
+    --success: 158 64% 42%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning state */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 224 76% 48%;
+
+    --radius: 0.75rem;
+
+    /* Chat specific */
+    --chat-user: 224 76% 48%;
+    --chat-user-foreground: 0 0% 100%;
+    --chat-assistant: 220 14% 96%;
+    --chat-assistant-foreground: 222 47% 11%;
+
+    /* Visual panel */
+    --panel-bg: 220 20% 98%;
+    --panel-border: 220 13% 91%;
+    --visual-card: 0 0% 100%;
+    --visual-card-border: 220 13% 88%;
+
+    /* Sidebar */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 224 76% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 47% 18%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 222 47% 18%;
+    --sidebar-ring: 224 76% 48%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(224 76% 48%), hsl(224 76% 58%));
+    --gradient-accent: linear-gradient(135deg, hsl(187 72% 44%), hsl(187 72% 54%));
+    --gradient-subtle: linear-gradient(180deg, hsl(220 20% 97%), hsl(220 14% 96%));
+    --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+    --shadow-glow: 0 0 40px rgba(51, 102, 204, 0.15);
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 220 14% 96%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 220 14% 96%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 220 14% 96%;
+
+    --primary: 224 76% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 47% 15%;
+    --secondary-foreground: 220 14% 96%;
+
+    --muted: 222 47% 15%;
+    --muted-foreground: 220 9% 60%;
+
+    --accent: 187 72% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 158 64% 48%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 47% 18%;
+    --input: 222 47% 18%;
+    --ring: 224 76% 58%;
+
+    --chat-user: 224 76% 50%;
+    --chat-user-foreground: 0 0% 100%;
+    --chat-assistant: 222 47% 15%;
+    --chat-assistant-foreground: 220 14% 96%;
+
+    --panel-bg: 222 47% 10%;
+    --panel-border: 222 47% 18%;
+    --visual-card: 222 47% 13%;
+    --visual-card-border: 222 47% 20%;
+
+    --sidebar-background: 222 47% 6%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 224 76% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 47% 15%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 222 47% 15%;
+    --sidebar-ring: 224 76% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Upload area styles */
+  .upload-zone {
+    @apply relative border-2 border-dashed rounded-2xl p-12 transition-all duration-300;
+    @apply bg-card hover:border-primary/50 hover:bg-secondary/30;
+    @apply focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary;
+  }
+
+  .upload-zone.dragover {
+    @apply border-primary bg-primary/5 scale-[1.02];
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Chat bubbles */
+  .chat-bubble-user {
+    @apply px-4 py-3 rounded-2xl rounded-br-md;
+    background: var(--gradient-primary);
+    color: hsl(var(--chat-user-foreground));
+  }
+
+  .chat-bubble-assistant {
+    @apply px-4 py-3 rounded-2xl rounded-bl-md bg-chat-assistant text-chat-assistant-foreground;
+  }
+
+  /* Visual cards */
+  .visual-card {
+    @apply rounded-xl border overflow-hidden transition-all duration-200;
+    @apply bg-visual-card border-visual-card-border;
+    @apply hover:shadow-md hover:border-primary/30;
+  }
+
+  /* Loading pulse animation */
+  .loading-pulse {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  /* Typing indicator */
+  .typing-dot {
+    @apply w-2 h-2 rounded-full bg-muted-foreground;
+    animation: typing 1.4s infinite;
+  }
+
+  .typing-dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .typing-dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes typing {
+    0%, 60%, 100% {
+      transform: translateY(0);
+      opacity: 0.4;
+    }
+    30% {
+      transform: translateY(-4px);
+      opacity: 1;
+    }
+  }
+
+  /* Smooth scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+  /* Progress bar animation */
+  .progress-bar {
+    @apply relative overflow-hidden rounded-full bg-secondary;
+  }
+
+  .progress-bar::after {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply backdrop-blur-md bg-white/80 border border-white/20;
+  }
+
+  /* Navbar */
+  .navbar {
+    @apply sticky top-0 z-50 h-16 border-b bg-background/95 backdrop-blur-sm;
+    @apply flex items-center justify-between px-6;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out;
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
