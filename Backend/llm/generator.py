@@ -30,12 +30,12 @@ def get_model():
             candidates.append(f"models/{configured_model}")
 
     candidates.extend([
+        "gemini-3.8-flash",
+        "models/gemini-3.8-flash",
+        "gemini-flash-latest",
+        "models/gemini-flash-latest",
         "gemini-1.5-flash",
         "models/gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "models/gemini-1.5-pro",
-        "gemini-pro",
-        "models/gemini-pro",
     ])
 
     # Discover available models from the API
@@ -45,8 +45,8 @@ def get_model():
             if "generateContent" in m.supported_generation_methods
         ]
         logger.info("Available generateContent models: %s", api_models)
-        # Prepend available models matching 1.5-flash or any flash
-        flash_models = [m for m in api_models if "flash" in m]
+        # Prepend available models matching flash (highest version first)
+        flash_models = sorted([m for m in api_models if "flash" in m], reverse=True)
         if flash_models:
             candidates = flash_models + candidates
         else:
