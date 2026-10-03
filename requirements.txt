@@ -9,4 +9,4 @@ Pillow>=10.2.0
 pymupdf>=1.23.26
 numpy>=1.26.0
 pandas>=2.2.0
-google-generativeai>=0.8.0
+google-generativeai==0.8.3
