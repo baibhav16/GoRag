@@ -1,15 +1,12 @@
 import logging
 import threading
 
-from sentence_transformers import SentenceTransformer
 from PIL import Image
-import torch
-from transformers import CLIPProcessor, CLIPModel
 
 logger = logging.getLogger(__name__)
 
-# ✅ Text model
-text_model = SentenceTransformer("all-MiniLM-L6-v2")
+text_model = None
+_text_lock = threading.Lock()
 
 clip_model = None
 clip_processor = None
@@ -25,20 +22,38 @@ def load_clip():
         with _clip_lock:
             if clip_model is None:
                 logger.info("Loading CLIP...")
+                from transformers import CLIPProcessor, CLIPModel
+
                 clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
                 clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
                 logger.info("CLIP loaded")
 
 
+def load_text_model():
+    global text_model
+
+    if text_model is None:
+        with _text_lock:
+            if text_model is None:
+                from sentence_transformers import SentenceTransformer
+
+                logger.info("Loading text embedding model...")
+                text_model = SentenceTransformer("all-MiniLM-L6-v2")
+                logger.info("Text embedding model loaded")
+
+    return text_model
+
+
 def embed_text(text: str):
     """✅ ONLY SentenceTransformer for text + tables"""
-    vec = text_model.encode(text).tolist()
+    vec = load_text_model().encode(text).tolist()
     return vec + [0] * (512 - len(vec))
 
 
 def embed_image(image_path: str):
     """✅ CLIP ONLY for images"""
     load_clip()
+    import torch
 
     image = Image.open(image_path).convert("RGB")
     inputs = clip_processor(images=image, return_tensors="pt")
