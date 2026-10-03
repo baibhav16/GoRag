@@ -3,7 +3,7 @@ services:
     name: gorag-api
     runtime: python
     plan: free
-    buildCommand: pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --app-dir Backend --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -11,8 +11,6 @@ services:
         value: 3.11.10
       - key: GEMINI_MODEL
         value: gemini-1.5-flash
-      - key: ENABLE_CLIP
-        value: "false"
       - key: QDRANT_URL
         sync: false
       - key: QDRANT_API_KEY
