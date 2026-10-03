@@ -3,8 +3,8 @@ import os
 import re
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from ingestion.parser import parse_pdf
@@ -15,12 +15,71 @@ from ingestion.figure_extractor import extract_figures
 
 from retrieval.search import retrieve
 from llm.generator import generate_answer
-from storage.qdrant_client import setup_collection, client, COLLECTION_NAME
+
+from storage.qdrant_client import (
+    setup_collection,
+    client,
+    COLLECTION_NAME,
+)
 
 from models import AskRequest, AskResponse
 
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+TEMP_DIR = "temp"
+EXTRACTED_DIR = "extracted"
+
+MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf"
+}
+
+
+# ============================================================
+# CREATE DIRECTORIES
+# ============================================================
+
+# These directories must exist before StaticFiles is mounted.
+os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(EXTRACTED_DIR, exist_ok=True)
+
+
+# ============================================================
+# FASTAPI APPLICATION
+# ============================================================
+
+app = FastAPI(
+    title="GoRag Backend",
+    version="1.0",
+    description="Multimodal Agentic RAG Pipeline (Text + Tables + Figures)",
+)
+
+
+# ============================================================
+# CORS CONFIGURATION
+# ============================================================
+
 origins = [
+    # Production frontend
     "https://gorag.vercel.app",
+
+    # Local development
     "http://localhost:5173",
     "http://localhost:3000",
 ]
@@ -33,141 +92,360 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
 
+# ============================================================
+# STATIC FILES
+# ============================================================
 
-TEMP_DIR = "temp"
-EXTRACTED_DIR = "extracted"
-MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
-ALLOWED_CONTENT_TYPES = {"application/pdf"}
+# Allows extracted images/figures to be accessed through:
+# https://gorag-backend.onrender.com/extracted/filename.png
 
-# ✅ Directories must exist BEFORE StaticFiles is mounted below — Starlette's
-# StaticFiles raises RuntimeError at import time if the directory is missing,
-# which previously crashed the app on a fresh clone (extracted/ didn't exist yet).
-os.makedirs(TEMP_DIR, exist_ok=True)
-os.makedirs(EXTRACTED_DIR, exist_ok=True)
-
-
-# -------------------------------
-# ✅ FASTAPI APP
-# -------------------------------
-app = FastAPI(
-    title="GoRag Backend",
-    version="1.0",
-    description="Multimodal Agentic RAG Pipeline (Text + Tables + Figures)"
+app.mount(
+    "/extracted",
+    StaticFiles(directory=EXTRACTED_DIR),
+    name="extracted",
 )
 
-# ✅ Allow frontend access
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# ✅ Serve extracted visuals
-app.mount("/extracted", StaticFiles(directory=EXTRACTED_DIR), name="extracted")
+# ============================================================
+# STARTUP EVENT
+# ============================================================
 
-
-# -------------------------------
-# ✅ STARTUP EVENT
-# -------------------------------
 @app.on_event("startup")
 def startup():
     logger.info("FastAPI startup...")
-    setup_collection()
-    logger.info("Qdrant ready!")
+
+    try:
+        setup_collection()
+        logger.info("Qdrant ready!")
+
+    except Exception:
+        logger.exception("Failed to initialize Qdrant collection")
+        raise
 
 
-# -------------------------------
-# ✅ ROOT
-# -------------------------------
+# ============================================================
+# ROOT ENDPOINT
+# ============================================================
+
 @app.get("/")
 def home():
-    return {"status": "GoRag Backend Running"}
+    return {
+        "status": "GoRag Backend Running"
+    }
 
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy"
+    }
+
+
+# ============================================================
+# FILENAME SANITIZATION
+# ============================================================
 
 def _sanitize_filename(filename: str) -> str:
-    """Collapse to a safe basename: strips directories and traversal segments."""
+    """
+    Collapse filename to a safe basename.
+
+    Removes:
+    - directory traversal
+    - special characters
+    - leading dots
+    """
+
     name = os.path.basename(filename or "").strip()
-    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+
+    name = re.sub(
+        r"[^A-Za-z0-9._-]",
+        "_",
+        name,
+    )
+
     name = name.lstrip(".")
+
     return name
 
 
+# ============================================================
+# SAFE FILE REMOVAL
+# ============================================================
+
 def _safe_remove(path: str) -> None:
+    """
+    Safely remove a file.
+    """
+
     try:
+
         if path and os.path.exists(path):
             os.remove(path)
+
     except OSError:
-        logger.warning("Could not remove temp file %s", path, exc_info=True)
+
+        logger.warning(
+            "Could not remove temp file %s",
+            path,
+            exc_info=True,
+        )
 
 
-def _ingest_pdf(pdf_path: str, doc_id: str) -> int:
-    """✅ All CPU-bound ingestion work (PyMuPDF, Camelot, embeddings) — run in
-    a threadpool by the caller so it doesn't block the asyncio event loop."""
+# ============================================================
+# PDF INGESTION
+# ============================================================
+
+def _ingest_pdf(
+    pdf_path: str,
+    doc_id: str,
+) -> int:
+    """
+    Perform all CPU-bound PDF ingestion work.
+
+    Includes:
+
+    1. PDF text extraction
+    2. Table extraction
+    3. Figure extraction
+    4. Qdrant upload
+    """
+
+    # ----------------------------------------
+    # Extract normal text
+    # ----------------------------------------
+
     blocks = parse_pdf(pdf_path)
-    blocks.extend(extract_tables(pdf_path))
-    blocks.extend(extract_figures(pdf_path, doc_id))
-    logger.info("Total extracted blocks = %d", len(blocks))
-    upload_to_qdrant(blocks, doc_id)
+
+    # ----------------------------------------
+    # Extract tables
+    # ----------------------------------------
+
+    blocks.extend(
+        extract_tables(pdf_path)
+    )
+
+    # ----------------------------------------
+    # Extract figures
+    # ----------------------------------------
+
+    blocks.extend(
+        extract_figures(
+            pdf_path,
+            doc_id,
+        )
+    )
+
+    logger.info(
+        "Total extracted blocks = %d",
+        len(blocks),
+    )
+
+    # ----------------------------------------
+    # Upload embeddings / blocks to Qdrant
+    # ----------------------------------------
+
+    upload_to_qdrant(
+        blocks,
+        doc_id,
+    )
+
     return len(blocks)
 
 
-# -------------------------------
-# ✅ UPLOAD ENDPOINT
-# -------------------------------
+# ============================================================
+# UPLOAD ENDPOINT
+# ============================================================
+
 @app.post("/upload")
 async def upload_pdf(file: UploadFile):
 
-    safe_name = _sanitize_filename(file.filename)
+    logger.info(
+        "Upload request received: filename=%s content_type=%s",
+        file.filename,
+        file.content_type,
+    )
+
+    # ========================================================
+    # SANITIZE FILENAME
+    # ========================================================
+
+    safe_name = _sanitize_filename(
+        file.filename
+    )
+
+    if not safe_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid filename.",
+        )
+
+    # ========================================================
+    # CHECK FILE EXTENSION
+    # ========================================================
 
     if not safe_name.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
-    if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are accepted.",
+        )
+
+    # ========================================================
+    # CHECK CONTENT TYPE
+    # ========================================================
+
+    if (
+        file.content_type
+        and file.content_type not in ALLOWED_CONTENT_TYPES
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are accepted.",
+        )
+
+    # ========================================================
+    # CREATE DOCUMENT ID
+    # ========================================================
 
     doc_id = safe_name
-    pdf_path = os.path.join(TEMP_DIR, doc_id)
+
+    pdf_path = os.path.join(
+        TEMP_DIR,
+        doc_id,
+    )
+
+    # ========================================================
+    # SAVE UPLOADED FILE
+    # ========================================================
 
     size = 0
+
     try:
-        with open(pdf_path, "wb") as buffer:
+
+        with open(
+            pdf_path,
+            "wb",
+        ) as buffer:
+
             while True:
-                chunk = await file.read(1024 * 1024)
+
+                chunk = await file.read(
+                    1024 * 1024
+                )
+
                 if not chunk:
                     break
+
                 size += len(chunk)
+
+                # --------------------------------------------
+                # MAX SIZE CHECK
+                # --------------------------------------------
+
                 if size > MAX_UPLOAD_SIZE_BYTES:
+
                     raise HTTPException(
                         status_code=413,
                         detail="File too large (max 25MB).",
                     )
-                buffer.write(chunk)
-    except HTTPException:
-        _safe_remove(pdf_path)
-        raise
-    except OSError:
-        _safe_remove(pdf_path)
-        logger.exception("Failed to save uploaded file %s", doc_id)
-        raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-    logger.info("PDF uploaded: %s", doc_id)
+                buffer.write(chunk)
+
+    except HTTPException:
+
+        _safe_remove(pdf_path)
+
+        raise
+
+    except OSError:
+
+        _safe_remove(pdf_path)
+
+        logger.exception(
+            "Failed to save uploaded file %s",
+            doc_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save uploaded file.",
+        )
+
+    finally:
+
+        await file.close()
+
+    logger.info(
+        "PDF uploaded: %s (%d bytes)",
+        doc_id,
+        size,
+    )
+
+    # ========================================================
+    # PROCESS PDF
+    # ========================================================
 
     try:
-        block_count = await run_in_threadpool(_ingest_pdf, pdf_path, doc_id)
-    except Exception:
-        _safe_remove(pdf_path)
-        logger.exception("Failed to process PDF %s", doc_id)
-        raise HTTPException(status_code=500, detail="Failed to process the uploaded PDF.")
 
-    count = client.count(collection_name=COLLECTION_NAME, exact=True)
-    logger.info("Points after upload = %d", count.count)
+        block_count = await run_in_threadpool(
+            _ingest_pdf,
+            pdf_path,
+            doc_id,
+        )
+
+    except Exception:
+
+        _safe_remove(pdf_path)
+
+        logger.exception(
+            "Failed to process PDF %s",
+            doc_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process the uploaded PDF.",
+        )
+
+    # ========================================================
+    # CHECK QDRANT
+    # ========================================================
+
+    try:
+
+        count = client.count(
+            collection_name=COLLECTION_NAME,
+            exact=True,
+        )
+
+        logger.info(
+            "Points after upload = %d",
+            count.count,
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to check Qdrant point count"
+        )
+
+
+    # ========================================================
+    # REMOVE TEMP PDF
+    # ========================================================
+
+    _safe_remove(pdf_path)
+
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
 
     return {
         "status": "uploaded",
@@ -176,32 +454,68 @@ async def upload_pdf(file: UploadFile):
     }
 
 
-# -------------------------------
-# ✅ ASK ENDPOINT
-# -------------------------------
-@app.post("/ask", response_model=AskResponse)
+# ============================================================
+# ASK ENDPOINT
+# ============================================================
+
+@app.post(
+    "/ask",
+    response_model=AskResponse,
+)
 async def ask(request: AskRequest):
 
     query = request.query
     doc_id = request.doc_id
 
-    logger.info("Ask request received: query=%r doc_id=%r", query, doc_id)
+    logger.info(
+        "Ask request received: query=%r doc_id=%r",
+        query,
+        doc_id,
+    )
+
+    # ========================================================
+    # RETRIEVAL
+    # ========================================================
 
     try:
-        context, visuals, citations = await run_in_threadpool(retrieve, query, doc_id)
+
+        context, visuals, citations = (
+            await run_in_threadpool(
+                retrieve,
+                query,
+                doc_id,
+            )
+        )
+
     except Exception:
-        logger.exception("Retrieval failed for doc_id=%s", doc_id)
+
+        logger.exception(
+            "Retrieval failed for doc_id=%s",
+            doc_id,
+        )
+
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve context from the document.",
         )
 
+    # ========================================================
+    # LOG RETRIEVAL RESULT
+    # ========================================================
+
     logger.info(
         "Retrieved context length=%d visuals=%d citations=%s",
-        len(context), len(visuals), citations,
+        len(context),
+        len(visuals),
+        citations,
     )
 
+    # ========================================================
+    # NO CONTEXT FOUND
+    # ========================================================
+
     if not context and not visuals:
+
         return AskResponse(
             answer="No relevant information found.",
             citations=[],
@@ -209,11 +523,34 @@ async def ask(request: AskRequest):
             doc_id=doc_id,
         )
 
+    # ========================================================
+    # GENERATE ANSWER
+    # ========================================================
+
     try:
-        answer = await run_in_threadpool(generate_answer, query, context, citations)
+
+        answer = await run_in_threadpool(
+            generate_answer,
+            query,
+            context,
+            citations,
+        )
+
     except Exception:
-        logger.exception("Answer generation failed for doc_id=%s", doc_id)
-        raise HTTPException(status_code=500, detail="Failed to generate an answer.")
+
+        logger.exception(
+            "Answer generation failed for doc_id=%s",
+            doc_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate an answer.",
+        )
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
 
     return AskResponse(
         answer=answer,
