@@ -171,6 +171,26 @@ def health():
     }
 
 
+@app.get("/models")
+def list_available_models():
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return {"error": "GEMINI_API_KEY is not set"}
+        genai.configure(api_key=api_key)
+        return [
+            {
+                "name": m.name,
+                "supported_methods": m.supported_generation_methods,
+            }
+            for m in genai.list_models()
+        ]
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
 
 # ============================================================
 # FILENAME SANITIZATION
